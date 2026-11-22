@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web tutorial: MQTT onlayn</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1b1f24;--muted:#5d6672;--line:#dde1e6;--accent:#2f6fed;--code:#0f172a;--ct:#e2e8f0;--ok:#16a34a;--off:#9ca3af}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#161b22;--text:#e6e9ee;--muted:#9aa4b0;--line:#2a313b;--accent:#6c9bff;--code:#0a0e14}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1200px;margin:0 auto;padding:14px}
+h1{font-size:1.4rem;margin:6px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+#login{max-width:420px;margin:12vh auto}
+input{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);margin:6px 0 12px}
+.btn{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:999px;padding:9px 18px;cursor:pointer}
+.btn.ghost{background:var(--card);color:var(--text);border:1px solid var(--line)}
+.btn.on{background:var(--ok);color:#fff;border-color:var(--ok)}
+.top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.users{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:3px 12px;font-size:.9rem}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--off);display:inline-block}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(22,163,74,.25)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:820px){.cols{grid-template-columns:1fr}}
+.col h2{font-size:1rem;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.lab{font-size:.75rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:8px 0 4px}
+textarea{width:100%;height:230px;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--code);color:var(--ct);font:14px/1.55 ui-monospace,Menlo,Consolas,monospace;tab-size:2;white-space:pre}
+textarea[readonly]{opacity:.75;cursor:not-allowed}
+iframe{width:100%;height:230px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.st{color:var(--muted);font-size:.85rem;margin-top:10px}
+#err{color:#dc2626;font-size:.9rem;min-height:1.2em}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div id="login" class="card">
+  <h1>Web tutorial</h1>
+  <p class="st" style="margin-top:0">Ismingizni yozing va xonaga kiring. Hamkasbingiz ham shu xona kodi bilan kiradi.</p>
+  <label>Ismingiz<input id="name" maxlength="20" placeholder="Masalan: Ali" autocomplete="off"></label>
+  <label>Xona kodi<input id="roomc" maxlength="24" value="sinf1" autocomplete="off"></label>
+  <div id="err"></div>
+  <button class="btn" id="go">Kirish</button>
+</div>
+
+<div id="app" hidden>
+  <div class="top">
+    <h1>Web tutorial</h1>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="chip"><span class="dot" id="mydot"></span><span id="conn">Ulanmoqda…</span></span>
+      <button class="btn ghost" id="mic">🎤 Mikrofonni yoqish</button>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="lab" style="margin-top:0">Xonada (onlayn)</div>
+    <div class="users" id="users"></div>
+  </div>
+  <div class="cols">
+    <div class="card col">
+      <h2><span class="dot" id="d1"></span><span id="n1">1-dasturchi: kutilmoqda…</span></h2>
+      <div class="lab">Kod</div><textarea id="ed1" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+      <div class="lab">Natija</div><iframe id="out1" sandbox="allow-scripts" title="Natija 1"></iframe>
+    </div>
+    <div class="card col">
+      <h2><span class="dot" id="d2"></span><span id="n2">2-dasturchi: kutilmoqda…</span></h2>
+      <div class="lab">Kod</div><textarea id="ed2" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+      <div class="lab">Natija</div><iframe id="out2" sandbox="allow-scripts" title="Natija 2"></iframe>
+    </div>
+  </div>
+  <div class="st" id="st"></div>
+  <div id="audios" hidden></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.3.4/mqtt.min.js"></script>
+<script>
+(function(){
+  var BROKER = 'wss://broker.emqx.io:8084/mqtt';
+  var SC = '<\/script>';
+  var starter = {
+    1: '<h1>Salom, dunyo!</h1>\n<p>Bu birinchi dasturchining sahifasi.</p>\n\n<ul>\n  <li>HTML</li>\n  <li>CSS</li>\n</ul>',
+    2: '<button id="b">Bos meni</button>\n<p>Hisob: <b id="n">0</b></p>\n\n<style>\n  body { font-family: sans-serif; padding: 16px; }\n  button { background: tomato; color: #fff; border: 0; padding: 10px 18px; border-radius: 8px; }\n</style>\n\n<script>\n  var n = 0;\n  document.getElementById("b").onclick = function () {\n    n++;\n    document.getElementById("n").textContent = n;\n  };\n' + SC
+  };
+  var VOID = /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr|!doctype)$/i;
+  var $ = function(i){ return document.getElementById(i); };
+  var myId = 'u' + Math.random().toString(36).slice(2, 10);
+  var myName = '', base = '', role = 0, client = null, mic = false, stream = null;
+  var peers = {}, pcs = {}, pend = {}, timers = {};
+
+  function status(t){ $('st').textContent = t; }
+  function run(r){ $('out'+r).srcdoc = $('ed'+r).value; }
+
+  /* ---------- kirish ---------- */
+  $('go').onclick = function(){
+    var n = $('name').value.trim(), r = $('roomc').value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!n) { $('err').textContent = 'Ismingizni yozing.'; return; }
+    if (!r) { $('err').textContent = 'Xona kodini yozing.'; return; }
+    myName = n; base = 'webtut/v1/' + r;
+    $('login').hidden = true; $('app').hidden = false;
+    [1,2].forEach(function(k){ $('ed'+k).value = starter[k]; $('ed'+k).readOnly = true; run(k); setupEditor(k); });
+    connect();
+  };
+  $('name').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('go').click(); });
+
+  /* ---------- MQTT ---------- */
+  function pubPresence(online){
+    if (!client) return;
+    client.publish(base + '/p/' + myId, JSON.stringify({ name: myName, role: role, online: online, mic: mic }), { retain: true });
+  }
+  function connect(){
+    client = mqtt.connect(BROKER, {
+      clientId: 'webtut_' + myId, clean: true, reconnectPeriod: 2000,
+      will: { topic: base + '/p/' + myId, payload: JSON.stringify({ name: myName, role: 0, online: false, mic: false }), retain: true, qos: 0 }
+    });
+    client.on('connect', function(){
+      $('mydot').classList.add('on'); $('conn').textContent = 'Onlayn: ' + myName;
+      client.subscribe([base + '/p/+', base + '/c/+', base + '/r/' + myId]);
+      setTimeout(pickRole, 1200);
+    });
+    client.on('reconnect', function(){ $('mydot').classList.remove('on'); $('conn').textContent = 'Qayta ulanmoqda…'; });
+    client.on('offline', function(){ $('mydot').classList.remove('on'); $('conn').textContent = 'Oflayn'; });
+    client.on('error', function(e){ status('Ulanish xatosi: ' + e.message); });
+    client.on('message', function(topic, payload){
+      var s = payload.toString(), parts = topic.slice(base.length + 1).split('/');
+      if (parts[0] === 'p') {
+        if (parts[1] === myId) return;
+        try { var d = JSON.parse(s); d.t = Date.now(); peers[parts[1]] = d; } catch(e){}
+        renderUsers(); link();
+      } else if (parts[0] === 'c') {
+        var r = +parts[1];
+        if (r !== role && (r === 1 || r === 2) && $('ed'+r).value !== s) { $('ed'+r).value = s; run(r); }
+      } else if (parts[0] === 'r') { onRtc(s); }
+    });
+    window.addEventListener('beforeunload', function(){ pubPresence(false); });
+  }
+  function pickRole(){
+    var taken = {};
+    Object.keys(peers).forEach(function(k){ if (peers[k].online && peers[k].role) taken[peers[k].role] = true; });
+    role = !taken[1] ? 1 : !taken[2] ? 2 : 0;
+    [1,2].forEach(function(k){ $('ed'+k).readOnly = (k !== role); });
+    if (role) pushCode(role, true);
+    pubPresence(true);
+    renderUsers();
+    status(role ? 'Siz ' + role + '-dasturchisiz. ' + role + '-oynada yozing.' : 'Xona toʻla: siz kuzatuvchisiz.');
+  }
+  function pushCode(r, now){
+    clearTimeout(timers[r]);
+    timers[r] = setTimeout(function(){
+      if (client && client.connected) client.publish(base + '/c/' + r, $('ed'+r).value, { retain: true });
+    }, now ? 0 : 200);
+  }
+  function renderUsers(){
+    var box = $('users'); box.textContent = '';
+    var list = [{ id: myId, name: myName + ' (siz)', role: role, online: true, mic: mic }];
+    Object.keys(peers).forEach(function(k){ if (peers[k].online) list.push({ id: k, name: peers[k].name, role: peers[k].role, online: true, mic: peers[k].mic }); });
+    list.forEach(function(u){
+      var c = document.createElement('span'); c.className = 'chip';
+      var d = document.createElement('span'); d.className = 'dot on';
+      var t = document.createElement('span');
+      t.textContent = u.name + (u.role ? ' · ' + u.role + '-dasturchi' : ' · kuzatuvchi') + (u.mic ? ' 🎤' : '');
+      c.appendChild(d); c.appendChild(t); box.appendChild(c);
+    });
+    [1,2].forEach(function(r){
+      var who = r === role ? { name: myName + ' (siz)' } : null;
+      Object.keys(peers).forEach(function(k){ if (peers[k].online && peers[k].role === r) who = peers[k]; });
+      $('n'+r).textContent = r + '-dasturchi: ' + (who ? who.name : 'kutilmoqda…');
+      $('d'+r).classList.toggle('on', !!who);
+    });
+  }
+
+  /* ---------- editor: avto-teg ---------- */
+  function insert(ta, text, back){
+    ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
+    if (back) ta.selectionStart = ta.selectionEnd = ta.selectionStart - back;
+    ta.dispatchEvent(new Event('input'));
+  }
+  function setupEditor(r){
+    var ta = $('ed'+r), tm;
+    ta.addEventListener('input', function(){
+      clearTimeout(tm); tm = setTimeout(function(){ run(r); }, 250);
+      if (r === role) pushCode(r);
+    });
+    ta.addEventListener('keydown', function(ev){
+      if (ta.readOnly) return;
+      var pos = ta.selectionStart, val = ta.value;
+      if (ev.key === 'Tab') { ev.preventDefault(); insert(ta, '  ', 0); return; }
+      if (ev.key === '>' && ta.selectionStart === ta.selectionEnd) {
+        var before = val.slice(0, pos), m = /<([a-zA-Z][a-zA-Z0-9-]*)(\s[^<>]*)?$/.exec(before);
+        if (m && !VOID.test(m[1]) && !/\/\s*$/.test(before)) {
+          ev.preventDefault();
+          var close = '</' + m[1] + '>';
+          insert(ta, '>' + close, close.length);
+        }
+        return;
+      }
+      if (ev.key === 'Enter') {
+        var ls = val.lastIndexOf('\n', pos - 1) + 1, ind = /^[ \t]*/.exec(val.slice(ls, pos))[0];
+        ev.preventDefault();
+        if (val.charAt(pos - 1) === '>' && val.slice(pos, pos + 2) === '</') insert(ta, '\n' + ind + '  \n' + ind, ind.length + 1);
+        else insert(ta, '\n' + ind, 0);
+      }
+    });
+  }
+
+  /* ---------- ovoz (WebRTC, signal MQTT orqali) ---------- */
+  function sendRtc(to, d){ d.from = myId; client.publish(base + '/r/' + to, JSON.stringify(d)); }
+  function closePc(id){
+    if (pcs[id]) { pcs[id].close(); delete pcs[id]; }
+    var a = $('au-'+id); if (a) a.remove();
+  }
+  function makePc(id){
+    if (pcs[id]) return pcs[id];
+    var pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    pcs[id] = pc; pend[id] = pend[id] || [];
+    stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+    pc.onicecandidate = function(e){ if (e.candidate) sendRtc(id, { k: 'ice', c: e.candidate.toJSON() }); };
+    pc.ontrack = function(e){
+      var a = $('au-'+id);
+      if (!a) { a = document.createElement('audio'); a.id = 'au-'+id; a.autoplay = true; $('audios').appendChild(a); }
+      a.srcObject = e.streams[0]; a.play().catch(function(){});
+    };
+    pc.onconnectionstatechange = function(){
+      if (pc.connectionState === 'connected') status('Ovozli aloqa ulandi. Gapirishingiz mumkin.');
+      if (pc.connectionState === 'failed') { closePc(id); status('Ovozli ulanish bajarilmadi. Mikrofonni oʻchirib qayta yoqing.'); }
+    };
+    return pc;
+  }
+  function flush(id){ (pend[id] || []).splice(0).forEach(function(c){ pcs[id].addIceCandidate(c).catch(function(){}); }); }
+  async function call(id){
+    var pc = makePc(id), o = await pc.createOffer();
+    await pc.setLocalDescription(o);
+    sendRtc(id, { k: 'offer', sdp: pc.localDescription.sdp });
+  }
+  async function onRtc(s){
+    var d; try { d = JSON.parse(s); } catch(e){ return; }
+    if (!stream || !d.from) return;
+    var id = d.from;
+    try {
+      if (d.k === 'offer') {
+        closePc(id);
+        var pc = makePc(id);
+        await pc.setRemoteDescription({ type: 'offer', sdp: d.sdp }); flush(id);
+        var an = await pc.createAnswer(); await pc.setLocalDescription(an);
+        sendRtc(id, { k: 'answer', sdp: pc.localDescription.sdp });
+      } else if (d.k === 'answer') {
+        if (pcs[id]) { await pcs[id].setRemoteDescription({ type: 'answer', sdp: d.sdp }); flush(id); }
+      } else if (d.k === 'ice') {
+        if (pcs[id] && pcs[id].remoteDescription) await pcs[id].addIceCandidate(d.c);
+        else (pend[id] = pend[id] || []).push(d.c);
+      }
+    } catch(e){ status('Ovoz xatosi: ' + e.message); }
+  }
+  function link(){
+    if (!stream) return;
+    Object.keys(peers).forEach(function(id){
+      var p = peers[id];
+      if (p.online && p.mic && myId < id && !pcs[id]) call(id).catch(function(e){ status('Ovoz xatosi: ' + e.message); });
+      if ((!p.online || !p.mic) && pcs[id]) closePc(id);
+    });
+  }
+  $('mic').onclick = async function(){
+    if (mic) {
+      stream.getTracks().forEach(function(t){ t.stop(); });
+      stream = null; mic = false; Object.keys(pcs).forEach(closePc);
+      $('mic').textContent = '🎤 Mikrofonni yoqish'; $('mic').classList.remove('on');
+      pubPresence(true); renderUsers(); status('Mikrofon oʻchirildi.');
+      return;
+    }
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch(e){ status('Mikrofon ishlamadi (' + e.name + '). Sahifa https yoki localhost orqali ochilganini tekshiring.'); return; }
+    mic = true;
+    $('mic').textContent = '🔇 Mikrofonni oʻchirish'; $('mic').classList.add('on');
+    status('Mikrofon yoqildi. Hamkasbingiz ham yoqishini kuting.');
+    pubPresence(true); renderUsers(); link();
+  };
+})();
+</script>
+</body>
+</html>
